@@ -7,7 +7,7 @@ const scrapeImages = async (url) => {
     // const auth = `${process.env.BRIGHTUSERNAME}:${process.env.BRIGHTPASSWORD}`;
 
     const browser = await puppeteer.launch({
-        headless: false,
+        headless: true,
         // browserWSEndpoint: `wss://${auth}@zproxy.lum-superproxy.io:9222`
         defaultViewport: { width: 1280, height: 720 },
     });
@@ -80,7 +80,7 @@ const scrapeImages = async (url) => {
                 name,
                 stars,
                 date,
-                "date_scraped_iso": new Date().toISOString(),
+                "dateiso_scraped": new Date().toISOString(),
                 review
             };
         });
@@ -92,7 +92,7 @@ const scrapeImages = async (url) => {
     const solveSliderCaptcha = async () => {
         await page.waitForSelector('iframe#baxia-dialog-content', {timeout: 2000})
             .then(async () => {
-                console.log('slider found');
+                console.log('performing captcha; slider found');
                 console.log('waiting for human interference');
                 await page.waitForTimeout(4000);
                 console.log('human interference window over');
@@ -107,45 +107,68 @@ const scrapeImages = async (url) => {
                         await sliderFrame.click('#nc_1_n1z.nc_iconfont.btn_slide');
                         console.log('clicked slider');
 
-                        console.log( await slider.boundingBox());
                         const sliderButtonBoundingBox = await slider.boundingBox();
 
                         // Calculate the desired position for sliding the slider
                         const slideAmount = 600; // Adjust the slide amount as needed
-
+              
                         // Calculate the target coordinates for sliding
                         const startX = sliderButtonBoundingBox.x;
                         const startY = sliderButtonBoundingBox.y + sliderButtonBoundingBox.height / 2;
                         await page.waitForTimeout(400);
+              
                         // Simulate mouse movements to slide the slider
                         await page.mouse.move(startX, startY);
                         await page.mouse.down();
-                        await page.mouse.move(startX + slideAmount, startY, { steps: 80 }); // Adjust the number of steps as needed
+                        await page.waitForTimeout(400);
+              
+                        const steps = 80; // Number of steps for the mouse movement
+                        const deltaY = slideAmount / steps; // Amount to move on the y-axis per step
+                        let currentY = startY;
+              
+                        for (let i = 0; i < steps; i++) {
+                          const x = startX + slideAmount * (i + 1) / steps;
+                          const y = currentY + deltaY * Math.sin((i / steps) * Math.PI); // Apply sine function for smooth movement on the y-axis
+              
+                          await page.mouse.move(x, y);
+                          await page.waitForTimeout(10); // Adjust the timeout as needed for the desired speed
+              
+                          currentY = y;
+                        }
+              
+                        await page.waitForTimeout(400);
                         await page.mouse.up();
-
-                        console.log('Slider slid successfully');
-
+              
+                        console.log('Slider automatically slid successfully');
                     })
                     .catch(() => {
-                        console.log('slider does not exist; maybe it was already taken cared of');
+                        console.log('slider disappeared; maybe it was already taken cared of; if not, then the captcha failed');
                     });
             })
             .catch(() => {
-                console.log('slider not found');
+                console.log('no captcha; slider not found');
             })
             
     }
+
+    const reviewList = [];
 
     // scrape the reviews of default page
     let reviews;
     reviews = await page.evaluate( scrapeReview )
     console.log(reviews);
+    reviewList.push(...reviews);
 
-    // click the filter button
-    const filterSelector = 'div.pdp-mod-filterSort > div.oper:nth-child(2)'
-    await page.waitForSelector(filterSelector);
-    // await scrollTo(filterSelector)
-    await page.click(filterSelector);
+    // open filter section function
+    const openFilterSection = async () => {
+        // click the filter button
+        const filterSelector = 'div.pdp-mod-filterSort > div.oper:nth-child(2)'
+        await page.waitForSelector(filterSelector);
+        // await scrollTo(filterSelector)
+        await page.click(filterSelector);
+    }
+
+    await openFilterSection();
 
     await solveSliderCaptcha();
 
@@ -157,17 +180,34 @@ const scrapeImages = async (url) => {
 
     await page.screenshot({path: '4.png', fullPage: true});
 
-    // select 4 star from the filter
-    const fourStarButton = 'div[data-tag=gateway-wrapper] div ul > li:nth-child(6)'
-    await page.waitForSelector(fourStarButton)
-    console.log('filter reviews div loaded');
-    await page.waitForTimeout(2000);
-    await page.hover(fourStarButton);
-    await page.click(fourStarButton); // select the 4 star review filter
+    // apply star filter
+    const selectStarFiler = async (star = 0) => {
+        // 5 star = nth-child(2)
+        // 4 star = nth-child(3)
+        // 3 star = nth-child(4)
+        // 2 star = nth-child(5)
+        // 1 star = nth-child(6)
+        // all stars = nth-child(1)
+        const starCalculation = 7 - star;
+        if (starCalculation < 1 || starCalculation > 6) {
+            console.log('invalid star filter');
+            return;
+        }
+        if (star === 0) {
+            starCalculation = 1; // all stars
+        }
+        const starSelector = `div[data-tag=gateway-wrapper] div ul > li:nth-child(${starCalculation})`
+        await page.waitForSelector(starSelector)
+        console.log('filter reviews div loaded');
+        await page.waitForTimeout(2000);
+        await page.hover(starSelector);
+        await page.click(starSelector);
+    
+        await solveSliderCaptcha();
+        await page.waitForTimeout(800);
+    }
 
-    await solveSliderCaptcha();
-
-    await page.waitForTimeout(1000);
+    selectStarFiler(3);
 
     await page.screenshot({path: '5.png', fullPage: true});
 
@@ -182,44 +222,56 @@ const scrapeImages = async (url) => {
     // scrape the 4 star reviews
     reviews = await page.evaluate( scrapeReview )
     console.log(reviews);
-    // click next button
+    reviewList.push(...reviews);
     await page.waitForTimeout(1000);
-    const nextButtonSelector = 'div.next-pagination button.next' // #module_product_review > div > div > div:nth-child(3) > div.next-pagination.next-pagination-normal.next-pagination-arrow-only.next-pagination-medium.medium.review-pagination > div > button.next-btn.next-btn-normal.next-btn-medium.next-pagination-item.next
-    await page.waitForSelector(nextButtonSelector)
-    const nextButton = await page.$(nextButtonSelector);
-    // await scrollTo(nextButtonSelector);
-    await nextButton.hover(nextButtonSelector);
-    await nextButton.click(nextButtonSelector, {delay: 200}).then(() => {
-        console.log('next button clicked');
-    }).catch(() => {
-        console.log('next button not clicked');
-    });
-    // console.log('next button clicked');
 
-    await solveSliderCaptcha();
-
-    await page.waitForTimeout(2000);
-
-    // scrape the 4 star reviews page 2
-    
-    reviews = await page.evaluate( () => {
-        const review_items = document.querySelectorAll('div.mod-reviews div.item');
-        const review_list = Array.from(review_items).map(v => {
-            const name = v.querySelector('div.middle > span:nth-child(1)').textContent.trim();
-            const date = v.querySelector('div.top span.title.right').textContent.trim();
-            const review = v.querySelector('div.item-content div.content').textContent.trim();
-            const stars = v.querySelectorAll('img[src="//laz-img-cdn.alicdn.com/tfs/TB19ZvEgfDH8KJjy1XcXXcpdXXa-64-64.png"]').length;
-            return {
-                name,
-                stars,
-                date,
-                "date_scraped_iso": new Date().toISOString(),
-                review
-            };
+    // click the next button function
+    const clickNextButton = async () => {
+        // click next button
+        const nextButtonSelector = 'div.next-pagination button.next' // #module_product_review > div > div > div:nth-child(3) > div.next-pagination.next-pagination-normal.next-pagination-arrow-only.next-pagination-medium.medium.review-pagination > div > button.next-btn.next-btn-normal.next-btn-medium.next-pagination-item.next
+        await page.waitForSelector(nextButtonSelector)
+        const nextButton = await page.$(nextButtonSelector);
+        await nextButton.hover(nextButtonSelector);
+        await nextButton.click(nextButtonSelector, {delay: 200}).then(() => {
+            console.log('next button clicked');
+        }).catch(() => {
+            console.log('next button not clicked');
         });
-        return review_list;
-    } )
-    console.log(reviews);
+        await page.waitForTimeout(500);
+    }
+    
+    // click next button until it is disabled
+    let isNextButtonDisabled = false;
+    do {
+        await clickNextButton();
+        await page.waitForTimeout(1000);
+        isNextButtonDisabled = await page.waitForSelector('div.next-pagination button.next[disabled]', {timeout: 800})
+            .then(() => {
+                console.log('next button disabled');
+                return true;
+            })
+            .catch(() => {
+                console.log('next button not disabled');
+                return false;
+            });
+        
+        reviews = await page.evaluate( scrapeReview )
+        console.log(reviews);
+        reviewList.push(...reviews);
+
+    } while (!isNextButtonDisabled);
+
+    // await clickNextButton();
+
+    // await solveSliderCaptcha();
+
+    // await page.waitForTimeout(2000);
+
+    // // scrape the 4 star reviews page 2
+    
+    // reviews = await page.evaluate( scrapeReview )
+    // console.log(reviews);
+    // reviewList.push(...reviews);
 
     await page.screenshot({path: '6.png', fullPage: true});
 
@@ -230,7 +282,7 @@ const scrapeImages = async (url) => {
     console.log('closing browser');
     await browser.close();
 
-    return reviews;
+    return reviewList;
 
 }
 
@@ -238,4 +290,9 @@ const scrapeImages = async (url) => {
 scrapeImages()
     .then((reviews) => {
         console.log(reviews);
+        console.log('Saving Reviews to json file for reference sample ONLY');
+        fs.writeFileSync('reviews.json', JSON.stringify(reviews));
+    })
+    .catch((err) => {
+        console.log(err);
     });
