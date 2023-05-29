@@ -7,7 +7,7 @@ const scrapeImages = async (url) => {
     // const auth = `${process.env.BRIGHTUSERNAME}:${process.env.BRIGHTPASSWORD}`;
 
     const browser = await puppeteer.launch({
-        headless: true,
+        headless: false,
         // browserWSEndpoint: `wss://${auth}@zproxy.lum-superproxy.io:9222`
         defaultViewport: { width: 1280, height: 720 },
     });
@@ -40,7 +40,8 @@ const scrapeImages = async (url) => {
     }, 1100);
 
     // navigate to product url
-    await page.goto('https://www.lazada.com.ph/products/lenovo-thinkplus-lp19-in-ear-true-wireless-earbuds-bluetooth-51-earphone-with-microphone-enc-noise-cancelling-hifi-sports-waterproof-headphones-bass-i3649062632-s19063103193.html');
+    await page.goto(url);
+    // await page.goto('https://www.lazada.com.ph/products/lenovo-thinkplus-lp19-in-ear-true-wireless-earbuds-bluetooth-51-earphone-with-microphone-enc-noise-cancelling-hifi-sports-waterproof-headphones-bass-i3649062632-s19063103193.html');
     await page.waitForSelector('img');
     await page.screenshot({path: '2.png'});
 
@@ -52,13 +53,14 @@ const scrapeImages = async (url) => {
     await page.waitForTimeout(1000);
     await page.mouse.click(200, 100); // Replace with the desired coordinates
 
+    console.log('waiting for the review section to load');
 
     // Wait for the review section to load
-    console.log('waiting for the review section to load');
-    const scrollTo = ( async (target_review_selector) => {
+    const scrollTo = async (target_review_selector) => {
         const target_review = await page.waitForSelector(target_review_selector);
         await page.evaluate((PageItem) => PageItem.scrollIntoView(), target_review);
-    })
+        console.log('scrolling...');
+    }
 
     await scrollTo('#module_product_review > div > div');
     // let target_review = await page.waitForSelector('#module_product_review > div > div')
@@ -84,6 +86,7 @@ const scrapeImages = async (url) => {
                 review
             };
         });
+        console.log('scraping reviews in the page')
         return review_list;
     }
 
@@ -111,34 +114,36 @@ const scrapeImages = async (url) => {
 
                         // Calculate the desired position for sliding the slider
                         const slideAmount = 600; // Adjust the slide amount as needed
-              
+
                         // Calculate the target coordinates for sliding
                         const startX = sliderButtonBoundingBox.x;
                         const startY = sliderButtonBoundingBox.y + sliderButtonBoundingBox.height / 2;
                         await page.waitForTimeout(400);
-              
+
                         // Simulate mouse movements to slide the slider
+                        await page.waitForTimeout(1000);
                         await page.mouse.move(startX, startY);
+                        await page.waitForTimeout(400);
                         await page.mouse.down();
                         await page.waitForTimeout(400);
-              
+
                         const steps = 80; // Number of steps for the mouse movement
                         const deltaY = slideAmount / steps; // Amount to move on the y-axis per step
                         let currentY = startY;
-              
+
                         for (let i = 0; i < steps; i++) {
-                          const x = startX + slideAmount * (i + 1) / steps;
-                          const y = currentY + deltaY * Math.sin((i / steps) * Math.PI); // Apply sine function for smooth movement on the y-axis
-              
-                          await page.mouse.move(x, y);
-                          await page.waitForTimeout(10); // Adjust the timeout as needed for the desired speed
-              
-                          currentY = y;
+                            const x = startX + slideAmount * (i + 1) / steps;
+                            const y = currentY + deltaY * Math.sin((i / steps) * Math.PI); // Apply sine function for smooth movement on the y-axis
+
+                            await page.mouse.move(x, y);
+                            await page.waitForTimeout(10); // Adjust the timeout as needed for the desired speed
+
+                            currentY = y;
                         }
-              
+
                         await page.waitForTimeout(400);
                         await page.mouse.up();
-              
+
                         console.log('Slider automatically slid successfully');
                     })
                     .catch(() => {
@@ -155,17 +160,23 @@ const scrapeImages = async (url) => {
 
     // scrape the reviews of default page
     let reviews;
-    reviews = await page.evaluate( scrapeReview )
-    console.log(reviews);
-    reviewList.push(...reviews);
+    // ! SCRAPE THE FIRST PAGE OF FIRST LOAD
+    // reviews = await page.evaluate( scrapeReview )
+    // console.log(reviews);
+    // reviewList.push(...reviews);
 
     // open filter section function
     const openFilterSection = async () => {
         // click the filter button
         const filterSelector = 'div.pdp-mod-filterSort > div.oper:nth-child(2)'
         await page.waitForSelector(filterSelector);
-        // await scrollTo(filterSelector)
-        await page.click(filterSelector);
+        try {
+            await page.click(filterSelector);
+            console.log('filter button opened');
+        } catch (error) {
+            console.log('filter button not found');
+            return;
+        }
     }
 
     await openFilterSection();
@@ -201,13 +212,18 @@ const scrapeImages = async (url) => {
         console.log('filter reviews div loaded');
         await page.waitForTimeout(2000);
         await page.hover(starSelector);
-        await page.click(starSelector);
+        try {
+            await page.click(starSelector);
+            console.log(`SET FILTER to ==> ${star} star filter`);
+        } catch (error) {
+            console.log(`error clicking ${star} star filter`);
+        }
     
         await solveSliderCaptcha();
         await page.waitForTimeout(800);
     }
 
-    selectStarFiler(3);
+    await selectStarFiler(3);
 
     await page.screenshot({path: '5.png', fullPage: true});
 
@@ -219,11 +235,11 @@ const scrapeImages = async (url) => {
     await page.waitForTimeout(2000);
 
 
-    // scrape the 4 star reviews
-    reviews = await page.evaluate( scrapeReview )
-    console.log(reviews);
-    reviewList.push(...reviews);
-    await page.waitForTimeout(1000);
+    // // scrape the 4 star reviews
+    // reviews = await page.evaluate( scrapeReview )
+    // console.log(reviews);
+    // reviewList.push(...reviews);
+    // await page.waitForTimeout(1000);
 
     // click the next button function
     const clickNextButton = async () => {
@@ -240,26 +256,79 @@ const scrapeImages = async (url) => {
         await page.waitForTimeout(500);
     }
     
-    // click next button until it is disabled
-    let isNextButtonDisabled = false;
-    do {
-        await clickNextButton();
-        await page.waitForTimeout(1000);
-        isNextButtonDisabled = await page.waitForSelector('div.next-pagination button.next[disabled]', {timeout: 800})
-            .then(() => {
-                console.log('next button disabled');
-                return true;
-            })
-            .catch(() => {
-                console.log('next button not disabled');
-                return false;
-            });
-        
+    // scrapeAllPages function
+    const scrapeAllPages = async (max_pages=10) => {
+        let pageNumber = 1;
+        // click next button until it is disabled
+        let isNextButtonDisabled = false;
+
+        await page.waitForTimeout(200);
+
+        // get the first page
         reviews = await page.evaluate( scrapeReview )
         console.log(reviews);
         reviewList.push(...reviews);
+        
+        // get the succeeding pages
+        while ((!isNextButtonDisabled) && (pageNumber < max_pages)) {
+            await page.waitForTimeout(200);
 
-    } while (!isNextButtonDisabled);
+            await clickNextButton();
+            await page.waitForTimeout(1000);
+            isNextButtonDisabled = await page.waitForSelector('div.next-pagination button.next[disabled]', {timeout: 800})
+                .then(() => {
+                    console.log('next button disabled');
+                    return true;
+                })
+                .catch(() => {
+                    console.log('continuing to next page');
+                    return false;
+                });
+
+            reviews = await page.evaluate( scrapeReview )
+            console.log(reviews);
+            reviewList.push(...reviews);
+            
+            pageNumber++;
+        } 
+    }
+
+    // await scrapeAllPages();
+
+    await openFilterSection();
+    await page.waitForTimeout(1000);
+    await selectStarFiler(5);
+    await page.waitForTimeout(1000);
+    await scrapeAllPages();
+    await page.waitForTimeout(1000);
+
+    await openFilterSection();
+    await page.waitForTimeout(1000);
+    await selectStarFiler(4);
+    await page.waitForTimeout(1000);
+    await scrapeAllPages();
+    await page.waitForTimeout(1000);
+
+    await openFilterSection();
+    await page.waitForTimeout(1000);
+    await selectStarFiler(3);
+    await page.waitForTimeout(1000);
+    await scrapeAllPages();
+    await page.waitForTimeout(1000);
+
+    await openFilterSection();
+    await page.waitForTimeout(1000);
+    await selectStarFiler(2);
+    await page.waitForTimeout(1000);
+    await scrapeAllPages();
+    await page.waitForTimeout(1000);
+
+    await openFilterSection();
+    await page.waitForTimeout(1000);
+    await selectStarFiler(1);
+    await page.waitForTimeout(1000);
+    await scrapeAllPages();
+    await page.waitForTimeout(1000);
 
     // await clickNextButton();
 
@@ -287,7 +356,7 @@ const scrapeImages = async (url) => {
 }
 
 
-scrapeImages()
+scrapeImages('https://www.lazada.com.ph/products/lenovo-thinkplus-lp19-in-ear-true-wireless-earbuds-bluetooth-51-earphone-with-microphone-enc-noise-cancelling-hifi-sports-waterproof-headphones-bass-i3649062632-s19063103193.html')
     .then((reviews) => {
         console.log(reviews);
         console.log('Saving Reviews to json file for reference sample ONLY');
