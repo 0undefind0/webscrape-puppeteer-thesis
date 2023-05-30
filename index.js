@@ -228,10 +228,10 @@ const scrapeImages = async (url) => {
     await page.screenshot({path: '5.png', fullPage: true});
 
     // Get the page's HTML content
-    const htmlContent = await page.content();
+    // const htmlContent = await page.content();
 
-    // Save the HTML content to a file for analysis
-    fs.writeFileSync('freezepage.html', htmlContent);
+    // ! // Save the HTML content to a file for analysis
+    // // fs.writeFileSync('freezepage.html', htmlContent);
     await page.waitForTimeout(2000);
 
 
